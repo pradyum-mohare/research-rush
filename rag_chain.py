@@ -26,7 +26,7 @@ def build_prompt(question, retrieved_chunks, chat_history):
         chunk["metadata"]["text"] for chunk in retrieved_chunks
     )
 
-    # Format chat history as a readable conversation transcript
+    
     history_text = ""
     if chat_history:
         history_text = "\n\nConversation so far:\n"
@@ -100,9 +100,7 @@ class RAGChain:
         print("[INFO] Conversation history cleared.")
 
 
-# ---------------------------------------------------------------------------
-# Keep this for backward compatibility with test_phase3.py
-# ---------------------------------------------------------------------------
+
 def ask_question(index, question, top_k=5):
     """Stateless single-turn question (no memory). Used by test_phase3.py."""
     from vector_store import query_similar_chunks

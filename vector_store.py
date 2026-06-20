@@ -5,21 +5,16 @@ from dotenv import load_dotenv
 from pinecone import Pinecone, ServerlessSpec
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-load_dotenv()  # reads GOOGLE_API_KEY and PINECONE_API_KEY from .env
+load_dotenv()  
 
 INDEX_NAME = "researchrush"
-EMBEDDING_DIMENSION = 3072   # output size of Google's embedding-001 model
+EMBEDDING_DIMENSION = 3072  
 
-# ---------------------------------------------------------------------------
-# Embeddings client (Gemini)
-# ---------------------------------------------------------------------------
 embeddings = GoogleGenerativeAIEmbeddings(
     model="models/gemini-embedding-001",
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
-# ---------------------------------------------------------------------------
-# Pinecone client
-# ---------------------------------------------------------------------------
+
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
 
