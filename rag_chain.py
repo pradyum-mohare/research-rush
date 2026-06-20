@@ -1,5 +1,6 @@
 import os
 
+import streamlit as st
 from dotenv import load_dotenv
 from google import genai
 
@@ -7,26 +8,37 @@ from vector_store import query_similar_chunks
 
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 GENERATION_MODEL = "gemini-2.5-flash"
 
 
+# ---------------------------------------------------------------------------
+# API key helper — reads from Streamlit secrets on cloud, .env locally
+# ---------------------------------------------------------------------------
+def get_google_api_key():
+    try:
+        return st.secrets["GOOGLE_API_KEY"]
+    except Exception:
+        return os.getenv("GOOGLE_API_KEY")
+
+
+def get_client():
+    return genai.Client(api_key=get_google_api_key())
+
+
+# ---------------------------------------------------------------------------
+# Prompt builder
+# ---------------------------------------------------------------------------
 def build_prompt(question, retrieved_chunks, chat_history):
     """
     Build a grounded prompt that includes:
     - Retrieved chunks as context (from Pinecone)
     - Full conversation history so Gemini understands follow-up questions
     - The new question
-
-    The history is formatted as alternating Human/Assistant turns so
-    Gemini can resolve references like "that", "it", "the second point"
-    back to what was actually said earlier.
     """
     context = "\n\n---\n\n".join(
         chunk["metadata"]["text"] for chunk in retrieved_chunks
     )
 
-    
     history_text = ""
     if chat_history:
         history_text = "\n\nConversation so far:\n"
@@ -53,18 +65,19 @@ Answer:"""
     return prompt
 
 
+# ---------------------------------------------------------------------------
+# Stateful RAG chain with memory
+# ---------------------------------------------------------------------------
 class RAGChain:
     """
     Stateful RAG chain that maintains conversation history across turns.
-
-    Each instance holds its own chat_history list, so you can have
-    multiple independent conversations (e.g. one per Streamlit session)
-    without them interfering with each other.
+    Each instance holds its own chat_history list, so multiple independent
+    conversations (e.g. one per Streamlit session) don't interfere.
     """
 
     def __init__(self, index):
         self.index = index
-        self.chat_history = []  # list of {"question": ..., "answer": ...}
+        self.chat_history = []
 
     def ask(self, question, top_k=5):
         """
@@ -79,6 +92,7 @@ class RAGChain:
 
         prompt = build_prompt(question, retrieved_chunks, self.chat_history)
 
+        client = get_client()
         response = client.models.generate_content(
             model=GENERATION_MODEL,
             contents=prompt
@@ -86,7 +100,6 @@ class RAGChain:
 
         answer = response.text
 
-        # Store this turn so future questions can reference it
         self.chat_history.append({
             "question": question,
             "answer": answer
@@ -95,15 +108,15 @@ class RAGChain:
         return answer
 
     def clear_history(self):
-        """Reset the conversation — useful for starting a fresh topic."""
+        """Reset the conversation."""
         self.chat_history = []
         print("[INFO] Conversation history cleared.")
 
 
-
+# ---------------------------------------------------------------------------
+# Stateless single-turn function (backward compatibility)
+# ---------------------------------------------------------------------------
 def ask_question(index, question, top_k=5):
-    """Stateless single-turn question (no memory). Used by test_phase3.py."""
-    from vector_store import query_similar_chunks
     retrieved_chunks = query_similar_chunks(index, question, top_k=top_k)
 
     if not retrieved_chunks:
@@ -111,6 +124,7 @@ def ask_question(index, question, top_k=5):
 
     prompt = build_prompt(question, retrieved_chunks, chat_history=[])
 
+    client = get_client()
     response = client.models.generate_content(
         model=GENERATION_MODEL,
         contents=prompt
