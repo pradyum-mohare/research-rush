@@ -126,3 +126,8 @@ def query_similar_chunks(index, query_text, top_k=5):
     )
 
     return results["matches"]
+
+def clear_index(index):
+    """Delete all vectors from the index — frees up space for new PDFs."""
+    index.delete(delete_all=True)
+    print("[INFO] Index cleared.")
