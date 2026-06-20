@@ -5,7 +5,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from pdf_processor import extract_text_from_pdfs, chunk_text
-from vector_store import create_index_if_not_exists, upsert_chunks
+from vector_store import create_index_if_not_exists, clear_index, upsert_chunks
 from rag_chain import RAGChain
 
 load_dotenv()
@@ -26,13 +26,13 @@ st.caption("Upload PDFs and ask questions — powered by Gemini + Pinecone RAG")
 # Session state — persists across reruns within the same browser session
 # ---------------------------------------------------------------------------
 if "rag_chain" not in st.session_state:
-    st.session_state.rag_chain = None        # RAGChain instance (has memory)
+    st.session_state.rag_chain = None
 
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []       # list of (question, answer) for display
+    st.session_state.chat_history = []
 
 if "pdfs_processed" not in st.session_state:
-    st.session_state.pdfs_processed = False  # whether PDFs have been indexed
+    st.session_state.pdfs_processed = False
 
 # ---------------------------------------------------------------------------
 # Sidebar — PDF upload and processing
@@ -50,7 +50,6 @@ with st.sidebar:
 
     if process_btn and uploaded_files:
         with st.spinner("Extracting text from PDFs..."):
-            # Save uploaded files to a temp directory so pdf_processor can read them
             temp_dir = tempfile.mkdtemp()
             pdf_paths = []
             for uploaded_file in uploaded_files:
@@ -64,8 +63,13 @@ with st.sidebar:
 
         st.success(f"Extracted text — {len(chunks)} chunks created.")
 
-        with st.spinner("Generating embeddings and indexing in Pinecone..."):
+        with st.spinner("Connecting to Pinecone..."):
             index = create_index_if_not_exists()
+
+        with st.spinner("Clearing previous documents from index..."):
+            clear_index(index)  # wipe old vectors before adding new ones
+
+        with st.spinner("Generating embeddings and indexing in Pinecone..."):
             upsert_chunks(index, chunks, source_name="uploaded_pdfs")
 
         with st.spinner("Setting up RAG chain..."):
@@ -78,7 +82,6 @@ with st.sidebar:
     if process_btn and not uploaded_files:
         st.warning("Please upload at least one PDF first.")
 
-    # Show status and clear button if PDFs are already processed
     if st.session_state.pdfs_processed:
         st.divider()
         st.success("PDFs are indexed and ready.")
@@ -95,26 +98,21 @@ with st.sidebar:
 if not st.session_state.pdfs_processed:
     st.info("👈 Upload your PDFs in the sidebar and click **Process PDFs** to get started.")
 else:
-    # Display existing conversation history
     for question, answer in st.session_state.chat_history:
         with st.chat_message("user"):
             st.write(question)
         with st.chat_message("assistant"):
             st.write(answer)
 
-    # Chat input — appears at the bottom
     user_input = st.chat_input("Ask a question about your PDFs...")
 
     if user_input:
-        # Show the user's message immediately
         with st.chat_message("user"):
             st.write(user_input)
 
-        # Generate answer with a spinner
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 answer = st.session_state.rag_chain.ask(user_input)
             st.write(answer)
 
-        # Store in display history
         st.session_state.chat_history.append((user_input, answer))
