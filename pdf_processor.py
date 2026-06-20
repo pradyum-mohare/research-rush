@@ -7,16 +7,15 @@ import pytesseract
 from PIL import Image
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# ---------------------------------------------------------------------------
-# Windows-only path — update this to match where you installed Tesseract.
-# PyMuPDF needs no separate install (it's pure pip), so Poppler is not
-# required at all.
-# ---------------------------------------------------------------------------
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# Fallback threshold — only used if a page has ZERO embedded images but
-# still returned suspiciously little native text (e.g. a blank or
-# corrupted page). Image-bearing pages always get OCR regardless of this.
+import sys
+
+if sys.platform == "win32":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+else:
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
+
 MIN_TEXT_THRESHOLD = 50
 
 
@@ -24,13 +23,13 @@ def clean_text(text):
     """Remove common watermark/boilerplate noise picked up from scraped PDFs
     (e.g. Studocu downloads), and collapse excess blank lines."""
     noise_patterns = [
-        r"messages\.\w+",       # e.g. messages.downloaded_by
-        r"lOMoARcPSD\|?\d*",    # Studocu document ID stamps
+        r"messages\.\w+",       
+        r"lOMoARcPSD\|?\d*",    
     ]
     for pattern in noise_patterns:
         text = re.sub(pattern, "", text)
 
-    text = re.sub(r"\n\s*\n+", "\n", text)  # collapse multiple blank lines
+    text = re.sub(r"\n\s*\n+", "\n", text)  
     return text.strip()
 
 
