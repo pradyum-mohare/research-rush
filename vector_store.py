@@ -1,26 +1,51 @@
 import os
 import time
 
+import streamlit as st
 from dotenv import load_dotenv
 from pinecone import Pinecone, ServerlessSpec
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-load_dotenv()  
+load_dotenv()
 
-INDEX_NAME = "researchrush"
-EMBEDDING_DIMENSION = 3072  
-
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/gemini-embedding-001",
-    google_api_key=os.getenv("GOOGLE_API_KEY")
-)
-
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+INDEX_NAME = "reviewrush"
+EMBEDDING_DIMENSION = 3072 
 
 
+
+def get_google_api_key():
+    try:
+        return st.secrets["GOOGLE_API_KEY"]
+    except Exception:
+        return os.getenv("GOOGLE_API_KEY")
+
+
+def get_pinecone_api_key():
+    try:
+        return st.secrets["PINECONE_API_KEY"]
+    except Exception:
+        return os.getenv("PINECONE_API_KEY")
+
+
+
+def get_embeddings():
+    return GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
+        google_api_key=get_google_api_key()
+    )
+
+
+def get_pinecone_client():
+    return Pinecone(api_key=get_pinecone_api_key())
+
+
+# ---------------------------------------------------------------------------
+# Index management
+# ---------------------------------------------------------------------------
 def create_index_if_not_exists():
     """Create the Pinecone index once. Safe to call every run — does
     nothing if the index already exists."""
+    pc = get_pinecone_client()
     existing_indexes = [idx["name"] for idx in pc.list_indexes()]
 
     if INDEX_NAME not in existing_indexes:
@@ -31,7 +56,6 @@ def create_index_if_not_exists():
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1")
         )
-        # Serverless index creation is async — wait until it's ready
         while not pc.describe_index(INDEX_NAME).status["ready"]:
             print("[INFO] Waiting for index to be ready...")
             time.sleep(2)
@@ -42,10 +66,12 @@ def create_index_if_not_exists():
     return pc.Index(INDEX_NAME)
 
 
-import time
-
+# ---------------------------------------------------------------------------
+# Embedding + upsert
+# ---------------------------------------------------------------------------
 def embed_chunks(chunks, batch_size=50):
     """Embed chunks in small batches with a delay to respect rate limits."""
+    embeddings = get_embeddings()
     print(f"[INFO] Generating embeddings for {len(chunks)} chunks...")
     all_vectors = []
 
@@ -55,7 +81,6 @@ def embed_chunks(chunks, batch_size=50):
         vectors = embeddings.embed_documents(batch)
         all_vectors.extend(vectors)
 
-        # Wait between batches to stay under 100 requests/min rate limit
         if i + batch_size < len(chunks):
             time.sleep(10)
 
@@ -63,11 +88,7 @@ def embed_chunks(chunks, batch_size=50):
 
 
 def upsert_chunks(index, chunks, source_name="document"):
-    """
-    Embed each chunk and upsert into Pinecone.
-    Each vector gets a unique ID and stores the original text + source
-    filename as metadata, so we can retrieve the readable text later.
-    """
+    """Embed each chunk and upsert into Pinecone with metadata."""
     vectors = embed_chunks(chunks)
 
     records = []
@@ -82,7 +103,6 @@ def upsert_chunks(index, chunks, source_name="document"):
         })
 
     print(f"[INFO] Upserting {len(records)} vectors into Pinecone...")
-    # Pinecone recommends batching upserts in groups of ~100
     batch_size = 100
     for i in range(0, len(records), batch_size):
         batch = records[i:i + batch_size]
@@ -91,8 +111,12 @@ def upsert_chunks(index, chunks, source_name="document"):
     print("[INFO] Upsert complete.")
 
 
+# ---------------------------------------------------------------------------
+# Query
+# ---------------------------------------------------------------------------
 def query_similar_chunks(index, query_text, top_k=5):
     """Embed a query and return the top_k most similar chunks from Pinecone."""
+    embeddings = get_embeddings()
     query_vector = embeddings.embed_query(query_text)
 
     results = index.query(
