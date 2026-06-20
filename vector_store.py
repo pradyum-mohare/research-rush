@@ -9,10 +9,12 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 load_dotenv()
 
 INDEX_NAME = "reviewrush"
-EMBEDDING_DIMENSION = 3072 
+EMBEDDING_DIMENSION = 3072  # gemini-embedding-001 outputs 3072-dim vectors
 
 
-
+# ---------------------------------------------------------------------------
+# API key helpers — reads from Streamlit secrets on cloud, .env locally
+# ---------------------------------------------------------------------------
 def get_google_api_key():
     try:
         return st.secrets["GOOGLE_API_KEY"]
@@ -27,7 +29,9 @@ def get_pinecone_api_key():
         return os.getenv("PINECONE_API_KEY")
 
 
-
+# ---------------------------------------------------------------------------
+# Clients — initialized lazily so secrets are read at runtime, not import
+# ---------------------------------------------------------------------------
 def get_embeddings():
     return GoogleGenerativeAIEmbeddings(
         model="models/gemini-embedding-001",
@@ -64,6 +68,16 @@ def create_index_if_not_exists():
         print(f"[INFO] Index '{INDEX_NAME}' already exists — reusing it.")
 
     return pc.Index(INDEX_NAME)
+
+
+def clear_index(index):
+    """
+    Delete all vectors from the index to free up storage.
+    Called before upserting new PDFs so storage stays flat regardless
+    of how many times the app is used.
+    """
+    index.delete(delete_all=True)
+    print("[INFO] Index cleared — ready for new documents.")
 
 
 # ---------------------------------------------------------------------------
@@ -126,8 +140,3 @@ def query_similar_chunks(index, query_text, top_k=5):
     )
 
     return results["matches"]
-
-def clear_index(index):
-    """Delete all vectors from the index — frees up space for new PDFs."""
-    index.delete(delete_all=True)
-    print("[INFO] Index cleared.")
